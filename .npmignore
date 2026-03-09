@@ -1,0 +1,16 @@
+# Security — never include credentials or local config
+.env
+local-git-deploy.yml
+local-git-deploy.json
+local-git-deploy.sample.yml
+
+# CI/CD
+.github/
+
+# Git internals
+.git/
+.gitignore
+
+# Temporary deploy state files
+*.tmp
+.deploy-sync-state
