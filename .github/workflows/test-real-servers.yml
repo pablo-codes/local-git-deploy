@@ -44,11 +44,10 @@ jobs:
           VPS_REMOTE_DIR: ${{ secrets.VPS_REMOTE_DIR || '/tmp/test_deploy' }}
         if: env.VPS_SERVER != '' && env.VPS_PASSWORD != ''
         run: |
-          # Wipe any leftover state from a previous CI run (failed or otherwise).
-          # This must run BEFORE the deploy tests so no stale .deploy-sync-state
-          # can cause a "bad object" error in a freshly created git repo.
+          # Delete ONLY the state file — that's the only thing that causes stale-hash errors.
+          # sshpass rm -f on a single file is reliable unlike recursive rm -rf.
           sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no "$VPS_USER@$VPS_SERVER" \
-            "rm -rf $VPS_REMOTE_DIR /tmp/test_deploy_key" || true
+            "rm -f $VPS_REMOTE_DIR/.deploy-sync-state /tmp/test_deploy_key/.deploy-sync-state" || true
 
       - name: Test SFTP (VPS) — Password Auth
         env:
@@ -102,9 +101,9 @@ jobs:
           FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR || '/public_html/test_deploy' }}
         if: env.FTP_SERVER != ''
         run: |
-          # lftp -e avoids heredocs (which break when indented in YAML)
+          # lftp rm works for single files — just delete the state file, not the whole dir.
           lftp -u "$FTP_USER,$FTP_PASSWORD" -p "$FTP_PORT" \
-            -e "rm -rf $FTP_REMOTE_DIR; quit" ftp://"$FTP_SERVER" || true
+            -e "rm $FTP_REMOTE_DIR/.deploy-sync-state; quit" ftp://"$FTP_SERVER" || true
 
       - name: Test FTP (Shared Hosting) Deployment
         env:
@@ -137,13 +136,13 @@ jobs:
           FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR || '/public_html/test_deploy' }}
         if: always()
         run: |
-          # SFTP/VPS cleanup via SSH
+          # SFTP/VPS: delete entire test dirs post-run (ssh rm -rf is fine here, not inside the test)
           if [ -n "$VPS_SERVER" ] && [ -n "$VPS_PASSWORD" ]; then
             sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no "$VPS_USER@$VPS_SERVER" \
               "rm -rf $VPS_REMOTE_DIR /tmp/test_deploy_key" || true
           fi
-          # FTP cleanup via lftp -e (avoids heredocs which break when indented in YAML)
+          # FTP: delete only the state file (lftp cannot recursively delete non-empty dirs)
           if [ -n "$FTP_SERVER" ]; then
             lftp -u "$FTP_USER,$FTP_PASSWORD" -p "$FTP_PORT" \
-              -e "rm -rf $FTP_REMOTE_DIR; quit" ftp://"$FTP_SERVER" || true
+              -e "rm $FTP_REMOTE_DIR/.deploy-sync-state; quit" ftp://"$FTP_SERVER" || true
           fi
