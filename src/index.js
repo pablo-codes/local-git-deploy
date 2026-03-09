@@ -65,15 +65,31 @@ async function main(options) {
 
             spinner.succeed(`Found remote state (Last deploy: ${remoteHash.substring(0, 7)}). Checking for changes...`);
 
-            // fix: audit issue #7 — disconnect is always called via finally, even on early return
             if (remoteHash === localHash) {
                 console.log(chalk.green('✅ Already up-to-date.'));
                 return;
             }
 
-            const diff = await getModifiedFiles(git, remoteHash, localHash, config.exclude);
-            uploadList = diff.upload;
-            deleteList = diff.remove;
+            // Guard: the remote hash might not exist in the local git history
+            // (e.g. fresh clone, git history rebase, or CI creating a new repo while
+            // the server still has a state file from a previous run).
+            // In that case, fall back to a safe full sync.
+            let remoteHashExists;
+            try {
+                await git.revparse(['--verify', remoteHash]);
+                remoteHashExists = true;
+            } catch {
+                remoteHashExists = false;
+            }
+
+            if (!remoteHashExists) {
+                spinner.warn(chalk.yellow(`⚠ Remote commit ${remoteHash.substring(0, 7)} not found in local history. Falling back to full sync...`));
+                uploadList = await getTrackedFiles(git, config.exclude);
+            } else {
+                const diff = await getModifiedFiles(git, remoteHash, localHash, config.exclude);
+                uploadList = diff.upload;
+                deleteList = diff.remove;
+            }
         } else {
             spinner.info('No remote state found. Performing initial full sync...');
             uploadList = await getTrackedFiles(git, config.exclude);
