@@ -18,6 +18,14 @@
   ],
   "author": "pablo-codes",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pablo-codes/local-git-deploy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pablo-codes/local-git-deploy/issues"
+  },
+  "homepage": "https://github.com/pablo-codes/local-git-deploy#readme",
   "engines": {
     "node": ">=16.0.0"
   },
