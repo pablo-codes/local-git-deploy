@@ -1,0 +1,10 @@
+server: ftp.your-server.com
+user: your_username
+protocol: ftp
+port: 21
+remote_dir: /public_html
+exclude:
+  - ".env"
+  - "*-git-deploy*.yml"
+  - "node_modules/**"
+  - ".git/**"

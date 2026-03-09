@@ -1,0 +1,112 @@
+name: Real Server E2E Tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  test-real-servers:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Use Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18.x'
+
+    - name: Install local-git-deploy Globally
+      run: npm install -g .
+
+    - name: Setup Mock Git Repository for Testing
+      run: |
+        mkdir e2e-test
+        cd e2e-test
+        git init
+        git config user.email "test@example.com"
+        git config user.name "GitHub Action Test"
+        echo "Test file 1" > file1.txt
+        git add .
+        git commit -m "Initial commit"
+
+    - name: Test SFTP (VPS) Deployment
+      env:
+        VPS_SERVER: ${{ secrets.VPS_SERVER }}
+        VPS_USER: ${{ secrets.VPS_USER }}
+        VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+        VPS_PRIVATE_KEY: ${{ secrets.VPS_PRIVATE_KEY }}
+        VPS_PORT: ${{ secrets.VPS_PORT }}
+        VPS_REMOTE_DIR: ${{ secrets.VPS_REMOTE_DIR || '/var/www/html/test_deploy' }}
+      if: env.VPS_SERVER != ''
+      run: |
+        cd e2e-test
+        
+        # Create .env
+        echo "DEPLOY_PASSWORD=$VPS_PASSWORD" > .env
+        
+        # Write private key if provided
+        if [ ! -z "$VPS_PRIVATE_KEY" ]; then
+          echo "$VPS_PRIVATE_KEY" > private_key.pem
+          chmod 600 private_key.pem
+          echo "DEPLOY_PRIVATE_KEY_PATH=./private_key.pem" >> .env
+        fi
+        
+        # Create local-git-deploy.yml
+        cat <<EOF > local-git-deploy.yml
+        server: $VPS_SERVER
+        user: $VPS_USER
+        protocol: sftp
+        port: $VPS_PORT
+        remote_dir: $VPS_REMOTE_DIR
+        exclude:
+          - ".env"
+          - "*.pem"
+          - "*-git-deploy*.yml"
+        EOF
+        
+        # Run the deployment
+        local-git-deploy
+        
+        # Test Incremental Deployment
+        echo "Second file" > file2.txt
+        git add .
+        git commit -m "Second commit"
+        local-git-deploy
+
+    - name: Test FTP (Shared Hosting) Deployment
+      env:
+        FTP_SERVER: ${{ secrets.FTP_SERVER }}
+        FTP_USER: ${{ secrets.FTP_USER }}
+        FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        FTP_PORT: ${{ secrets.FTP_PORT || '21' }}
+        FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR || '/public_html/test_deploy' }}
+      if: env.FTP_SERVER != ''
+      run: |
+        cd e2e-test
+        # Overwrite .env
+        echo "DEPLOY_PASSWORD=$FTP_PASSWORD" > .env
+        
+        # Overwrite local-git-deploy.yml
+        cat <<EOF > local-git-deploy.yml
+        server: $FTP_SERVER
+        user: $FTP_USER
+        protocol: ftp
+        port: $FTP_PORT
+        remote_dir: $FTP_REMOTE_DIR
+        exclude:
+          - ".env"
+          - "*-git-deploy*.yml"
+        EOF
+        
+        # Test Full Deployment
+        local-git-deploy
+        
+        # Test Incremental Deployment
+        echo "Third file" > file3.txt
+        git add .
+        git commit -m "Third commit"
+        local-git-deploy
