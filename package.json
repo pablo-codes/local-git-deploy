@@ -1,6 +1,6 @@
 {
   "name": "local-git-deploy",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "CLI tool to sync a local git working directory with a remote FTP/SFTP server.",
   "main": "src/index.js",
   "bin": {
@@ -9,9 +9,12 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["ftp", "sftp", "ftps", "deploy", "git"],
+  "author": "pablo-codes",
   "license": "ISC",
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "dependencies": {
     "basic-ftp": "^5.2.0",
     "chalk": "^4.1.2",

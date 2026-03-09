@@ -2,11 +2,6 @@ const simpleGit = require('simple-git');
 const path = require('path');
 const micromatch = require('micromatch');
 
-/**
- * Validates that the directory is a git repository
- * @param {string} localDir 
- * @returns {import('simple-git').SimpleGit}
- */
 async function initGit(localDir) {
     const git = simpleGit(localDir);
     const isRepo = await git.checkIsRepo();
@@ -16,76 +11,62 @@ async function initGit(localDir) {
     return git;
 }
 
-/**
- * Gets the current commit hash (HEAD)
- * @param {import('simple-git').SimpleGit} git 
- * @returns {Promise<string>}
- */
 async function getLocalHeadHash(git) {
-    return await git.revparse(['HEAD']);
+    return (await git.revparse(['HEAD'])).trim();
 }
 
-/**
- * Gets all tracked files in the git repository, filtered by ignore patterns
- * @param {import('simple-git').SimpleGit} git 
- * @param {string[]} excludePatterns Glob patterns to exclude
- * @returns {Promise<string[]>} Array of file paths relative to git root
- */
 async function getTrackedFiles(git, excludePatterns = []) {
-    // git ls-files returns all currently tracked files
-    const result = await git.raw(['ls-files']);
-    const files = result.split('\n').filter(Boolean);
-    
-    // Filter out excluded files
+    // Use -z (null-terminated) to safely handle filenames with spaces or special characters
+    const result = await git.raw(['ls-files', '-z']);
+    const files = result.split('\0').filter(Boolean);
+
     if (excludePatterns.length > 0) {
         return files.filter(file => !micromatch.isMatch(file, excludePatterns));
     }
     return files;
 }
 
-/**
- * Gets added, modified, deleted, and renamed files between two commits
- * @param {import('simple-git').SimpleGit} git 
- * @param {string} remoteHash The last deployed commit hash on the remote server
- * @param {string} localHash The current HEAD commit hash
- * @param {string[]} excludePatterns Glob patterns to exclude
- * @returns {Promise<{upload: string[], remove: string[]}>}
- */
 async function getModifiedFiles(git, remoteHash, localHash, excludePatterns = []) {
-    // git diff --name-status remoteHash localHash
-    const diffSummary = await git.raw(['diff', '--name-status', remoteHash, localHash]);
-    const lines = diffSummary.split('\n').filter(Boolean);
+    // Use -z (null-terminated) to safely handle filenames with spaces or special characters
+    const diffSummary = await git.raw(['diff', '--name-status', '-z', remoteHash, localHash]);
+    const entries = diffSummary.split('\0').filter(Boolean);
 
     const upload = [];
     const remove = [];
 
-    for (const line of lines) {
-        // Line format: "M\tpath/to/file" or "R100\told/path\tnew/path"
-        const parts = line.split('\t');
-        const status = parts[0];
+    let i = 0;
+    while (i < entries.length) {
+        const status = entries[i];
+        i++;
 
-        // Ensure we don't process excluded files
-        const fileUploadCandidate = parts[parts.length - 1]; // Works for "M file" and "R old new"
-        const isExcluded = excludePatterns.length > 0 && micromatch.isMatch(fileUploadCandidate, excludePatterns);
-        
-        if (status.startsWith('D')) { // Deleted
-             remove.push(parts[1]);
-        } else if (status.startsWith('R')) { // Renamed
-             if (!excludePatterns.length || !micromatch.isMatch(parts[1], excludePatterns)) {
-                 remove.push(parts[1]); // Delete old path
-             }
-             if (!isExcluded) {
-                 upload.push(parts[2]); // Upload new path
-             }
-        } else if (['A', 'C', 'M'].some(s => status.startsWith(s))) { // Added, Copied, Modified
-             if (!isExcluded) {
-                 upload.push(parts[1]);
-             }
+        if (status.startsWith('R') || status.startsWith('C')) {
+            // Rename/Copy: next two tokens are old path and new path
+            const oldPath = entries[i++];
+            const newPath = entries[i++];
+
+            // Delete old path on remote unless it matches an exclude pattern
+            // We intentionally check the OLD path here for the delete side
+            if (!excludePatterns.length || !micromatch.isMatch(oldPath, excludePatterns)) {
+                remove.push(oldPath);
+            }
+            // Upload new path unless excluded
+            if (!excludePatterns.length || !micromatch.isMatch(newPath, excludePatterns)) {
+                upload.push(newPath);
+            }
+        } else if (status.startsWith('D')) {
+            const filePath = entries[i++];
+            // Apply exclude pattern check consistently (fix: audit issue #3)
+            if (!excludePatterns.length || !micromatch.isMatch(filePath, excludePatterns)) {
+                remove.push(filePath);
+            }
+        } else if (['A', 'C', 'M', 'T'].some(s => status.startsWith(s))) {
+            const filePath = entries[i++];
+            if (!excludePatterns.length || !micromatch.isMatch(filePath, excludePatterns)) {
+                upload.push(filePath);
+            }
         } else {
-             // Handle 'T' (type change) or others as modified
-             if (!isExcluded && parts[1]) {
-                 upload.push(parts[1]);
-             }
+            // Unknown status token; skip it
+            i++;
         }
     }
 

@@ -6,6 +6,8 @@ const ora = require('ora');
 const chalk = require('chalk');
 const path = require('path');
 
+const SHA_REGEX = /^[0-9a-f]{40}$/i;
+
 async function main(options) {
     console.log(chalk.blue.bold('🚀 Starting local-git-deploy\n'));
 
@@ -56,7 +58,14 @@ async function main(options) {
         let deleteList = [];
 
         if (remoteHash) {
+            // Validate hash before using it in a git command (fix: audit issue #5)
+            if (!SHA_REGEX.test(remoteHash)) {
+                throw new Error(`Invalid or corrupted hash in remote state file: "${remoteHash}". Delete the .deploy-sync-state file on the server to perform a fresh full deploy.`);
+            }
+
             spinner.succeed(`Found remote state (Last deploy: ${remoteHash.substring(0, 7)}). Checking for changes...`);
+
+            // fix: audit issue #7 — disconnect is always called via finally, even on early return
             if (remoteHash === localHash) {
                 console.log(chalk.green('✅ Already up-to-date.'));
                 return;
@@ -85,12 +94,11 @@ async function main(options) {
 
             for (const file of uploadList) {
                 spinner.start(chalk.green(`Uploading ${file}...`));
-                // Resolve the absolute local path to read from
                 const localFilePath = path.resolve(config.local_dir, file);
                 await client.uploadFile(localFilePath, file);
                 spinner.succeed(chalk.green(`Uploaded ${file}`));
             }
-            
+
             spinner.start('Updating remote sync state...');
             await client.writeStateFile(localHash);
             spinner.succeed('Remote sync state updated.');
