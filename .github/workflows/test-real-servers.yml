@@ -2,9 +2,9 @@ name: Real Server E2E Tests
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
@@ -12,100 +12,143 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-    - name: Use Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18.x'
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18.x"
 
-    - name: Install dependencies and CLI tool
-      run: |
-        npm ci
-        npm install -g .
+      - name: Install dependencies and CLI tool
+        run: |
+          npm ci
+          npm install -g .
 
-    - name: Setup Mock Git Repository for Testing
-      run: |
-        mkdir e2e-test
-        cd e2e-test
-        git init
-        git config user.email "test@example.com"
-        git config user.name "GitHub Action Test"
-        echo "Test file 1" > file1.txt
-        git add .
-        git commit -m "Initial commit"
+      - name: Setup Mock Git Repository for Testing
+        run: |
+          mkdir e2e-test
+          cd e2e-test
+          git init
+          git config user.email "test@example.com"
+          git config user.name "GitHub Action Test"
+          echo "Test file 1" > file1.txt
+          git add .
+          git commit -m "Initial commit"
 
-    - name: Test SFTP (VPS) — Password Auth
-      env:
-        VPS_SERVER: ${{ secrets.VPS_SERVER }}
-        VPS_USER: ${{ secrets.VPS_USER }}
-        VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
-        VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
-        VPS_REMOTE_DIR: ${{ secrets.VPS_REMOTE_DIR || '/tmp/test_deploy' }}
-      if: env.VPS_SERVER != '' && env.VPS_PASSWORD != ''
-      run: |
-        cd e2e-test
-        printf "DEPLOY_PASSWORD=%s\n" "$VPS_PASSWORD" > .env
-        printf "server: %s\nuser: %s\nprotocol: sftp\nport: %s\nremote_dir: %s\nexclude:\n  - \".env\"\n  - \"*.pem\"\n  - \"*-git-deploy*.yml\"\n" \
-          "$VPS_SERVER" "$VPS_USER" "$VPS_PORT" "$VPS_REMOTE_DIR" > local-git-deploy.yml
-        local-git-deploy
-        echo "Second file" > file2.txt
-        git add . && git commit -m "Second commit"
-        local-git-deploy
-
-    - name: Test SFTP (VPS) — Private Key Auth
-      env:
-        VPS_SERVER: ${{ secrets.VPS_SERVER }}
-        VPS_USER: ${{ secrets.VPS_USER }}
-        VPS_PRIVATE_KEY: ${{ secrets.VPS_PRIVATE_KEY }}
-        VPS_PRIVATE_KEY_PASSPHRASE: ${{ secrets.VPS_PRIVATE_KEY_PASSPHRASE }}
-        VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
-        VPS_REMOTE_DIR: ${{ secrets.VPS_REMOTE_DIR || '/tmp/test_deploy_key' }}
-      if: env.VPS_SERVER != '' && env.VPS_PRIVATE_KEY != ''
-      run: |
-        cd e2e-test
-        echo "$VPS_PRIVATE_KEY" > private_key.pem
-        chmod 600 private_key.pem
-        # Write env — include passphrase only if provided
-        printf "DEPLOY_PRIVATE_KEY_PATH=./private_key.pem\n" > .env
-        if [ -n "$VPS_PRIVATE_KEY_PASSPHRASE" ]; then
-          printf "DEPLOY_PASSWORD=%s\n" "$VPS_PRIVATE_KEY_PASSPHRASE" >> .env
-        fi
-        printf "server: %s\nuser: %s\nprotocol: sftp\nport: %s\nremote_dir: %s\nexclude:\n  - \".env\"\n  - \"*.pem\"\n  - \"*-git-deploy*.yml\"\n" \
-          "$VPS_SERVER" "$VPS_USER" "$VPS_PORT" "$VPS_REMOTE_DIR" > local-git-deploy.yml
-        local-git-deploy
-        echo "Key-auth file" > file3.txt
-        git add . && git commit -m "Third commit (key auth)"
-        local-git-deploy
-
-    - name: Test FTP (Shared Hosting) Deployment
-      env:
-        FTP_SERVER: ${{ secrets.FTP_SERVER }}
-        FTP_USER: ${{ secrets.FTP_USER }}
-        FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-        FTP_PORT: ${{ secrets.FTP_PORT || '21' }}
-        FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR || '/public_html/test_deploy' }}
-      if: env.FTP_SERVER != ''
-      run: |
-        cd e2e-test
-        printf "DEPLOY_PASSWORD=%s\n" "$FTP_PASSWORD" > .env
-        printf "server: %s\nuser: %s\nprotocol: ftp\nport: %s\nremote_dir: %s\nexclude:\n  - \".env\"\n  - \"*.pem\"\n  - \"*-git-deploy*.yml\"\n" \
-          "$FTP_SERVER" "$FTP_USER" "$FTP_PORT" "$FTP_REMOTE_DIR" > local-git-deploy.yml
-        local-git-deploy
-        echo "FTP file" > file4.txt
-        git add . && git commit -m "FTP commit"
-        local-git-deploy
-
-    - name: Cleanup Remote Test Directories (SFTP VPS)
-      env:
-        VPS_SERVER: ${{ secrets.VPS_SERVER }}
-        VPS_USER: ${{ secrets.VPS_USER }}
-        VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
-        VPS_REMOTE_DIR: ${{ secrets.VPS_REMOTE_DIR || '/tmp/test_deploy' }}
-      if: env.VPS_SERVER != ''
-      run: |
-        # Remove test dirs using sshpass (available on ubuntu-latest)
-        if [ -n "$VPS_PASSWORD" ]; then
+      - name: Pre-cleanup Remote Test Directories (ensure clean state before testing)
+        env:
+          VPS_SERVER: ${{ secrets.VPS_SERVER }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+          VPS_REMOTE_DIR: ${{ secrets.VPS_REMOTE_DIR || '/tmp/test_deploy' }}
+        if: env.VPS_SERVER != '' && env.VPS_PASSWORD != ''
+        run: |
+          # Wipe any leftover state from a previous CI run (failed or otherwise).
+          # This must run BEFORE the deploy tests so no stale .deploy-sync-state
+          # can cause a "bad object" error in a freshly created git repo.
           sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no "$VPS_USER@$VPS_SERVER" \
             "rm -rf $VPS_REMOTE_DIR /tmp/test_deploy_key" || true
-        fi
+
+      - name: Test SFTP (VPS) — Password Auth
+        env:
+          VPS_SERVER: ${{ secrets.VPS_SERVER }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_REMOTE_DIR: ${{ secrets.VPS_REMOTE_DIR || '/tmp/test_deploy' }}
+        if: env.VPS_SERVER != '' && env.VPS_PASSWORD != ''
+        run: |
+          cd e2e-test
+          printf "DEPLOY_PASSWORD=%s\n" "$VPS_PASSWORD" > .env
+          printf "server: %s\nuser: %s\nprotocol: sftp\nport: %s\nremote_dir: %s\nexclude:\n  - \".env\"\n  - \"*.pem\"\n  - \"*-git-deploy*.yml\"\n" \
+            "$VPS_SERVER" "$VPS_USER" "$VPS_PORT" "$VPS_REMOTE_DIR" > local-git-deploy.yml
+          local-git-deploy
+          echo "Second file" > file2.txt
+          git add . && git commit -m "Second commit"
+          local-git-deploy
+
+      - name: Test SFTP (VPS) — Private Key Auth
+        env:
+          VPS_SERVER: ${{ secrets.VPS_SERVER }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PRIVATE_KEY: ${{ secrets.VPS_PRIVATE_KEY }}
+          VPS_PRIVATE_KEY_PASSPHRASE: ${{ secrets.VPS_PRIVATE_KEY_PASSPHRASE }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_REMOTE_DIR: ${{ secrets.VPS_REMOTE_DIR || '/tmp/test_deploy_key' }}
+        if: env.VPS_SERVER != '' && env.VPS_PRIVATE_KEY != ''
+        run: |
+          cd e2e-test
+          echo "$VPS_PRIVATE_KEY" > private_key.pem
+          chmod 600 private_key.pem
+          # Write env — include passphrase only if provided
+          printf "DEPLOY_PRIVATE_KEY_PATH=./private_key.pem\n" > .env
+          if [ -n "$VPS_PRIVATE_KEY_PASSPHRASE" ]; then
+            printf "DEPLOY_PASSWORD=%s\n" "$VPS_PRIVATE_KEY_PASSPHRASE" >> .env
+          fi
+          printf "server: %s\nuser: %s\nprotocol: sftp\nport: %s\nremote_dir: %s\nexclude:\n  - \".env\"\n  - \"*.pem\"\n  - \"*-git-deploy*.yml\"\n" \
+            "$VPS_SERVER" "$VPS_USER" "$VPS_PORT" "$VPS_REMOTE_DIR" > local-git-deploy.yml
+          local-git-deploy
+          echo "Key-auth file" > file3.txt
+          git add . && git commit -m "Third commit (key auth)"
+          local-git-deploy
+
+      - name: Pre-cleanup FTP Test Directory (ensure clean state before testing)
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_PORT: ${{ secrets.FTP_PORT || '21' }}
+          FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR || '/public_html/test_deploy' }}
+        if: env.FTP_SERVER != ''
+        run: |
+          # lftp is pre-installed on ubuntu-latest; mirrors --reverse --delete can wipe a remote dir.
+          # `rm -rf` via lftp is the FTP equivalent of sshpass rm -rf.
+          lftp -u "$FTP_USER,$FTP_PASSWORD" -p "$FTP_PORT" ftp://"$FTP_SERVER" <<EOF || true
+          rm -rf $FTP_REMOTE_DIR
+          quit
+          EOF
+
+      - name: Test FTP (Shared Hosting) Deployment
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_PORT: ${{ secrets.FTP_PORT || '21' }}
+          FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR || '/public_html/test_deploy' }}
+        if: env.FTP_SERVER != ''
+        run: |
+          cd e2e-test
+          printf "DEPLOY_PASSWORD=%s\n" "$FTP_PASSWORD" > .env
+          printf "server: %s\nuser: %s\nprotocol: ftp\nport: %s\nremote_dir: %s\nexclude:\n  - \".env\"\n  - \"*.pem\"\n  - \"*-git-deploy*.yml\"\n" \
+            "$FTP_SERVER" "$FTP_USER" "$FTP_PORT" "$FTP_REMOTE_DIR" > local-git-deploy.yml
+          local-git-deploy
+          echo "FTP file" > file4.txt
+          git add . && git commit -m "FTP commit"
+          local-git-deploy
+
+      - name: Post-cleanup Remote Test Directories
+        env:
+          VPS_SERVER: ${{ secrets.VPS_SERVER }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+          VPS_REMOTE_DIR: ${{ secrets.VPS_REMOTE_DIR || '/tmp/test_deploy' }}
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_PORT: ${{ secrets.FTP_PORT || '21' }}
+          FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR || '/public_html/test_deploy' }}
+        if: always()
+        run: |
+          # SFTP/VPS cleanup via SSH
+          if [ -n "$VPS_SERVER" ] && [ -n "$VPS_PASSWORD" ]; then
+            sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no "$VPS_USER@$VPS_SERVER" \
+              "rm -rf $VPS_REMOTE_DIR /tmp/test_deploy_key" || true
+          fi
+          # FTP cleanup via lftp
+          if [ -n "$FTP_SERVER" ]; then
+            lftp -u "$FTP_USER,$FTP_PASSWORD" -p "$FTP_PORT" ftp://"$FTP_SERVER" <<EOF || true
+            rm -rf $FTP_REMOTE_DIR
+            quit
+            EOF
+
+            fi

@@ -71,25 +71,23 @@ async function main(options) {
             }
 
             // Guard: the remote hash might not exist in the local git history
-            // (e.g. fresh clone, git history rebase, or CI creating a new repo while
-            // the server still has a state file from a previous run).
-            // In that case, fall back to a safe full sync.
-            let remoteHashExists;
+            // (e.g. after a force-push, rebase, or deploying from a different clone).
+            // Fail loudly with an actionable message rather than silently doing the
+            // wrong thing — a "full sync" fallback would skip deletions and leave
+            // orphaned files on the server.
             try {
                 await git.revparse(['--verify', remoteHash]);
-                remoteHashExists = true;
             } catch {
-                remoteHashExists = false;
+                throw new Error(
+                    `Remote commit ${remoteHash.substring(0, 7)} does not exist in your local git history. ` +
+                    `This can happen after a force-push, rebase, or when deploying from a different clone. ` +
+                    `To fix: delete the .deploy-sync-state file on the server and run local-git-deploy again to perform a fresh full sync.`
+                );
             }
 
-            if (!remoteHashExists) {
-                spinner.warn(chalk.yellow(`⚠ Remote commit ${remoteHash.substring(0, 7)} not found in local history. Falling back to full sync...`));
-                uploadList = await getTrackedFiles(git, config.exclude);
-            } else {
-                const diff = await getModifiedFiles(git, remoteHash, localHash, config.exclude);
-                uploadList = diff.upload;
-                deleteList = diff.remove;
-            }
+            const diff = await getModifiedFiles(git, remoteHash, localHash, config.exclude);
+            uploadList = diff.upload;
+            deleteList = diff.remove;
         } else {
             spinner.info('No remote state found. Performing initial full sync...');
             uploadList = await getTrackedFiles(git, config.exclude);
