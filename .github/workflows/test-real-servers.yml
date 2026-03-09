@@ -102,8 +102,10 @@ jobs:
         if: env.FTP_SERVER != ''
         run: |
           # lftp rm works for single files — just delete the state file, not the whole dir.
+          # ssl:verify-certificate no handles shared hosting servers with mismatched certs.
           lftp -u "$FTP_USER,$FTP_PASSWORD" -p "$FTP_PORT" \
-            -e "rm $FTP_REMOTE_DIR/.deploy-sync-state; quit" ftp://"$FTP_SERVER" || true
+            -e "set ssl:verify-certificate no; rm $FTP_REMOTE_DIR/.deploy-sync-state; quit" \
+            ftp://"$FTP_SERVER" || true
 
       - name: Test FTP (Shared Hosting) Deployment
         env:
@@ -144,5 +146,6 @@ jobs:
           # FTP: delete only the state file (lftp cannot recursively delete non-empty dirs)
           if [ -n "$FTP_SERVER" ]; then
             lftp -u "$FTP_USER,$FTP_PASSWORD" -p "$FTP_PORT" \
-              -e "rm $FTP_REMOTE_DIR/.deploy-sync-state; quit" ftp://"$FTP_SERVER" || true
+              -e "set ssl:verify-certificate no; rm $FTP_REMOTE_DIR/.deploy-sync-state; quit" \
+              ftp://"$FTP_SERVER" || true
           fi
