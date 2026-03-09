@@ -101,12 +101,9 @@ jobs:
           FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR || '/public_html/test_deploy' }}
         if: env.FTP_SERVER != ''
         run: |
-          # lftp is pre-installed on ubuntu-latest; mirrors --reverse --delete can wipe a remote dir.
-          # `rm -rf` via lftp is the FTP equivalent of sshpass rm -rf.
-          lftp -u "$FTP_USER,$FTP_PASSWORD" -p "$FTP_PORT" ftp://"$FTP_SERVER" <<EOF || true
-          rm -rf $FTP_REMOTE_DIR
-          quit
-          EOF
+          # lftp -e avoids heredocs (which break when indented in YAML)
+          lftp -u "$FTP_USER,$FTP_PASSWORD" -p "$FTP_PORT" \
+            -e "rm -rf $FTP_REMOTE_DIR; quit" ftp://"$FTP_SERVER" || true
 
       - name: Test FTP (Shared Hosting) Deployment
         env:
@@ -144,11 +141,8 @@ jobs:
             sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no "$VPS_USER@$VPS_SERVER" \
               "rm -rf $VPS_REMOTE_DIR /tmp/test_deploy_key" || true
           fi
-          # FTP cleanup via lftp
+          # FTP cleanup via lftp -e (avoids heredocs which break when indented in YAML)
           if [ -n "$FTP_SERVER" ]; then
-            lftp -u "$FTP_USER,$FTP_PASSWORD" -p "$FTP_PORT" ftp://"$FTP_SERVER" <<EOF || true
-            rm -rf $FTP_REMOTE_DIR
-            quit
-            EOF
-
-            fi
+            lftp -u "$FTP_USER,$FTP_PASSWORD" -p "$FTP_PORT" \
+              -e "rm -rf $FTP_REMOTE_DIR; quit" ftp://"$FTP_SERVER" || true
+          fi
