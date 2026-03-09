@@ -4,12 +4,18 @@
   "description": "CLI tool to sync a local git working directory with a remote FTP/SFTP server.",
   "main": "src/index.js",
   "bin": {
-    "local-git-deploy": "./bin/cli.js"
+    "local-git-deploy": "bin/cli.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["ftp", "sftp", "ftps", "deploy", "git"],
+  "keywords": [
+    "ftp",
+    "sftp",
+    "ftps",
+    "deploy",
+    "git"
+  ],
   "author": "pablo-codes",
   "license": "ISC",
   "engines": {
