@@ -19,8 +19,10 @@ jobs:
       with:
         node-version: '18.x'
 
-    - name: Install local-git-deploy Globally
-      run: npm install -g .
+    - name: Install dependencies and CLI tool
+      run: |
+        npm ci
+        npm install -g .
 
     - name: Setup Mock Git Repository for Testing
       run: |
