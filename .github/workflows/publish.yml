@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Upgrade npm CLI
+        run: npm install -g npm@latest
+
       - name: Verify package version matches release tag
         if: github.event_name == 'release'
         run: |
@@ -37,5 +40,5 @@ jobs:
           echo "✅ Version match confirmed: $RELEASE_TAG"
 
       - name: Publish to npm
-        run: npm publish --access public
-        # NODE_AUTH_TOKEN is not needed — OIDC trusted publishing handles auth automatically
+        run: npm publish --access public --provenance
+        # OIDC handles auth — no NODE_AUTH_TOKEN needed
