@@ -1,7 +1,7 @@
 {
   "name": "local-git-deploy",
   "version": "1.2.1",
-  "description": "CLI tool to deploy changed files from a local git working directory to a remote FTP, FTPS, or SFTP server. Fast git-diff-powered deployments for shared hosting.",
+  "description": "Deploy only changed git files to FTP, FTPS, or SFTP servers. Fast, incremental, no CI/CD pipeline required.",
   "main": "src/index.js",
   "bin": {
     "local-git-deploy": "bin/cli.js"
@@ -40,7 +40,7 @@
   "bugs": {
     "url": "https://github.com/pablo-codes/local-git-deploy/issues"
   },
-  "homepage": "https://github.com/pablo-codes/local-git-deploy#readme",
+  "homepage": "https://www.npmjs.com/package/local-git-deploy",
   "engines": {
     "node": ">=16.0.0"
   },
