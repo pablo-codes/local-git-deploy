@@ -1,6 +1,6 @@
 {
   "name": "local-git-deploy",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "CLI tool to sync a local git working directory with a remote FTP/SFTP server.",
   "main": "src/index.js",
   "bin": {
@@ -20,7 +20,7 @@
   "license": "ISC",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pablo-codes/local-git-deploy.git"
+    "url": "git+https://github.com/pablo-codes/local-git-deploy.git"
   },
   "bugs": {
     "url": "https://github.com/pablo-codes/local-git-deploy/issues"
