@@ -1,7 +1,7 @@
 {
   "name": "local-git-deploy",
   "version": "1.2.1",
-  "description": "CLI tool to sync a local git working directory with a remote FTP/SFTP server.",
+  "description": "CLI tool to deploy changed files from a local git working directory to a remote FTP, FTPS, or SFTP server. Fast git-diff-powered deployments for shared hosting.",
   "main": "src/index.js",
   "bin": {
     "local-git-deploy": "bin/cli.js"
@@ -14,7 +14,22 @@
     "sftp",
     "ftps",
     "deploy",
-    "git"
+    "git",
+    "ftp-deploy",
+    "git-ftp",
+    "git-sftp",
+    "local-deploy",
+    "deploy-cli",
+    "file-sync",
+    "shared-hosting",
+    "incremental-deploy",
+    "git-diff",
+    "cli",
+    "deployment",
+    "upload",
+    "sync",
+    "cpanel",
+    "php-deploy"
   ],
   "author": "pablo-codes",
   "license": "ISC",
