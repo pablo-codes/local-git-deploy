@@ -1,10 +1,63 @@
+# ============================================================
+# local-git-deploy — Sample Configuration
+# ============================================================
+# Copy this file to 'local-git-deploy.yml' and update the values.
+# See README.md for full documentation.
+
+# ---------- Basic (flat) configuration ----------
+# Use this format for a single-environment deployment.
+
 server: ftp.your-server.com
 user: your_username
-protocol: ftp
-port: 21
+protocol: ftp            # Options: ftp | ftps | sftp
+port: 21                 # Default: 21 (FTP/FTPS), 22 (SFTP)
 remote_dir: /public_html
 exclude:
   - ".env"
   - "*-git-deploy*.yml"
   - "node_modules/**"
   - ".git/**"
+
+# ---------- Deploy hooks (SFTP only) ----------
+# Run commands or scripts on the server before/after file sync.
+# Requires protocol: sftp
+#
+# pre_deploy:
+#   - "cd /var/www/app && php artisan down"
+#   - script: ./scripts/backup-db.sh        # uploads & runs a local script
+#
+# post_deploy:
+#   - "cd /var/www/app && composer install --no-dev"
+#   - "cd /var/www/app && php artisan migrate --force"
+#   - "cd /var/www/app && php artisan cache:clear"
+#   - "cd /var/www/app && php artisan up"
+
+# ---------- Multi-branch deployment ----------
+# Use the 'branches:' key to deploy different branches to different servers/dirs.
+# Top-level settings act as defaults — branches can override any setting.
+# Run: local-git-deploy --branch <name> to override auto-detection.
+# Run: local-git-deploy --force to deploy unmapped branches using defaults.
+#
+# server: example.com
+# user: deploy
+# protocol: sftp
+#
+# branches:
+#   main:
+#     remote_dir: /var/www/production
+#     password_env: DEPLOY_PASSWORD_PROD
+#     post_deploy:
+#       - "cd /var/www/production && php artisan migrate --force"
+#
+#   staging:
+#     remote_dir: /var/www/staging
+#     password_env: DEPLOY_PASSWORD_STAGING
+#
+#   develop:
+#     server: dev.example.com          # override server
+#     user: dev-deploy                 # override user
+#     remote_dir: /var/www/dev
+#     password_env: DEPLOY_PASSWORD_DEV
+#
+#   "feature/*":                       # glob pattern — matches all feature branches
+#     remote_dir: /var/www/preview

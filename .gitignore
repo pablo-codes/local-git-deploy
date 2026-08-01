@@ -3,3 +3,4 @@ node_modules
 test-remote
 local-git-deploy.yml
 test-server.js
+test-local.js

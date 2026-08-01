@@ -1,5 +1,5 @@
-const { loadConfig } = require('./config');
-const { initGit, getLocalHeadHash, getTrackedFiles, getModifiedFiles } = require('./git');
+const { parseConfigFile, resolveBranchConfig, validateAndNormalize } = require('./config');
+const { initGit, getLocalHeadHash, getTrackedFiles, getModifiedFiles, getCurrentBranch } = require('./git');
 const FTPClient = require('./clients/ftp-client');
 const SFTPClient = require('./clients/sftp-client');
 const ora = require('ora');
@@ -8,26 +8,93 @@ const path = require('path');
 
 const SHA_REGEX = /^[0-9a-f]{40}$/i;
 
+/**
+ * Run a list of pre/post deploy hooks.
+ * Each entry is either a string (inline command) or { script: "./path.sh" } (script file).
+ */
+async function runHooks(client, hooks, config, spinner, label) {
+    if (!hooks || hooks.length === 0) return;
+
+    if (config.protocol !== 'sftp') {
+        spinner.warn(`${label} scripts require SFTP protocol. Skipping.`);
+        return;
+    }
+
+    console.log(chalk.cyan(`\n🔧 Running ${label} scripts...`));
+
+    for (const hook of hooks) {
+        if (typeof hook === 'string') {
+            // Inline command
+            spinner.start(chalk.dim(`  → ${hook}`));
+            await client.executeCommand(hook);
+            spinner.succeed(chalk.dim(`  → ${hook}`));
+        } else if (hook.script) {
+            // Script file — resolve relative to local project dir
+            const scriptPath = path.resolve(config.local_dir, hook.script);
+            spinner.start(chalk.dim(`  → script: ${hook.script}`));
+            await client.executeScript(scriptPath);
+            spinner.succeed(chalk.dim(`  → script: ${hook.script}`));
+        } else {
+            spinner.warn(`  → Unknown hook format, skipping: ${JSON.stringify(hook)}`);
+        }
+    }
+}
+
 async function main(options) {
     console.log(chalk.blue.bold('🚀 Starting local-git-deploy\n'));
 
+    // Phase 1: Parse raw config file (needed for local_dir before git init)
     const spinner = ora('Loading configuration...').start();
-    let config;
+    let rawConfig;
     try {
-        config = loadConfig(options.config);
-        spinner.succeed('Configuration loaded.');
+        rawConfig = parseConfigFile(options.config);
+        spinner.succeed('Configuration file parsed.');
     } catch (e) {
         spinner.fail(`Configuration error: ${e.message}`);
         process.exit(1);
     }
 
+    // Phase 2: Initialize Git and detect branch
+    const localDir = path.resolve(process.cwd(), rawConfig.local_dir || './');
     spinner.start('Initializing Git repository...');
     let git;
     try {
-        git = await initGit(config.local_dir);
+        git = await initGit(localDir);
         spinner.succeed('Git repository initialized.');
     } catch (e) {
         spinner.fail(e.message);
+        process.exit(1);
+    }
+
+    let currentBranch;
+    try {
+        currentBranch = options.branch || await getCurrentBranch(git);
+    } catch (e) {
+        spinner.fail(`Failed to detect branch: ${e.message}`);
+        process.exit(1);
+    }
+
+    // Phase 3: Resolve branch-specific config (if multi-branch layout)
+    let config;
+    try {
+        const hasBranches = rawConfig.branches && typeof rawConfig.branches === 'object';
+
+        if (hasBranches) {
+            console.log(chalk.cyan(`  Branch: ${currentBranch}`));
+            const resolved = resolveBranchConfig(rawConfig, currentBranch, options.force);
+            if (resolved === null) {
+                console.log(chalk.yellow(`\n⚠ Branch "${currentBranch}" is not configured for deployment. Skipping.`));
+                console.log(chalk.yellow(`  Use --force to deploy using base config.\n`));
+                process.exit(0);
+            }
+            config = validateAndNormalize(resolved);
+        } else {
+            config = validateAndNormalize(rawConfig);
+        }
+
+        spinner.succeed('Configuration resolved.');
+    } catch (e) {
+        spinner.fail(`Configuration error: ${e.message}`);
         process.exit(1);
     }
 
@@ -52,6 +119,9 @@ async function main(options) {
     }
 
     try {
+        // Pre-deploy hooks (before file sync)
+        await runHooks(client, config.pre_deploy, config, spinner, 'pre-deploy');
+
         spinner.start('Checking remote sync state...');
         const remoteHash = await client.readStateFile();
         let uploadList = [];
@@ -60,7 +130,7 @@ async function main(options) {
         if (remoteHash) {
             // Validate hash before using it in a git command (fix: audit issue #5)
             if (!SHA_REGEX.test(remoteHash)) {
-                throw new Error(`Invalid or corrupted hash in remote state file: "${remoteHash}". Delete the .deploy-sync-state file on the server to perform a fresh full deploy.`);
+                throw new Error(`Invalid or corrupted hash in remote state file: "${remoteHash}". Delete the ${client.stateFileName} file on the server to perform a fresh full deploy.`);
             }
 
             spinner.succeed(`Found remote state (Last deploy: ${remoteHash.substring(0, 7)}). Checking for changes...`);
@@ -81,7 +151,7 @@ async function main(options) {
                 throw new Error(
                     `Remote commit ${remoteHash.substring(0, 7)} does not exist in your local git history. ` +
                     `This can happen after a force-push, rebase, or when deploying from a different clone. ` +
-                    `To fix: delete the .deploy-sync-state file on the server and run local-git-deploy again to perform a fresh full sync.`
+                    `To fix: delete the ${client.stateFileName} file on the server and run local-git-deploy again to perform a fresh full sync.`
                 );
             }
 
@@ -112,6 +182,10 @@ async function main(options) {
                 await client.uploadFile(localFilePath, file);
                 spinner.succeed(chalk.green(`Uploaded ${file}`));
             }
+
+            // Post-deploy hooks (after file sync, before state update)
+            // If these fail, state file is NOT updated — re-run will re-attempt everything.
+            await runHooks(client, config.post_deploy, config, spinner, 'post-deploy');
 
             spinner.start('Updating remote sync state...');
             await client.writeStateFile(localHash);

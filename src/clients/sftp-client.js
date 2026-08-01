@@ -2,11 +2,16 @@ const SFTP = require('ssh2-sftp-client');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const chalk = require('chalk');
 
 class SFTPClient {
     constructor(config) {
         this.config = config;
         this.client = new SFTP();
+        // Per-branch state file naming: feature/login → .deploy-sync-state-feature-login
+        this.stateFileName = config._branch
+            ? `.deploy-sync-state-${config._branch.replace(/\//g, '-')}`
+            : '.deploy-sync-state';
     }
 
     async connect() {
@@ -65,7 +70,7 @@ class SFTPClient {
     }
 
     async readStateFile() {
-        const remotePath = path.posix.join(this.config.remote_dir, '.deploy-sync-state').replace(/\\/g, '/');
+        const remotePath = path.posix.join(this.config.remote_dir, this.stateFileName).replace(/\\/g, '/');
         const exists = await this.client.exists(remotePath);
         if (!exists) return null;
 
@@ -81,9 +86,64 @@ class SFTPClient {
         const localTempPath = path.join(os.tmpdir(), `.deploy-sync-state-${process.pid}.tmp`);
         fs.writeFileSync(localTempPath, hash);
         try {
-            await this.uploadFile(localTempPath, '.deploy-sync-state');
+            await this.uploadFile(localTempPath, this.stateFileName);
         } finally {
             if (fs.existsSync(localTempPath)) fs.unlinkSync(localTempPath);
+        }
+    }
+
+    /**
+     * Execute a command on the remote server via the underlying SSH connection.
+     * Streams stdout/stderr in real-time and rejects on non-zero exit code.
+     */
+    async executeCommand(command) {
+        return new Promise((resolve, reject) => {
+            // Access the underlying ssh2.Client from ssh2-sftp-client
+            const sshClient = this.client.client;
+
+            sshClient.exec(command, (err, stream) => {
+                if (err) return reject(err);
+
+                let stdout = '';
+                let stderr = '';
+
+                stream.on('data', (data) => {
+                    stdout += data.toString();
+                    process.stdout.write(chalk.dim(data.toString()));
+                });
+
+                stream.stderr.on('data', (data) => {
+                    stderr += data.toString();
+                    process.stderr.write(chalk.red(data.toString()));
+                });
+
+                stream.on('close', (code) => {
+                    if (code !== 0) {
+                        reject(new Error(`Command exited with code ${code}: ${stderr.trim()}`));
+                    } else {
+                        resolve({ stdout, stderr, code });
+                    }
+                });
+            });
+        });
+    }
+
+    /**
+     * Upload a local script file to a temp location on the server,
+     * make it executable, run it, then clean up.
+     */
+    async executeScript(localScriptPath) {
+        const remoteTmpPath = `/tmp/.deploy-script-${process.pid}-${Date.now()}.sh`;
+
+        // Upload the script directly (absolute path, not relative to remote_dir)
+        await this.client.put(localScriptPath, remoteTmpPath);
+        await this.executeCommand(`chmod +x ${remoteTmpPath}`);
+
+        try {
+            await this.executeCommand(remoteTmpPath);
+        } finally {
+            // Clean up remote temp script
+            await this.executeCommand(`rm -f ${remoteTmpPath}`);
         }
     }
 }

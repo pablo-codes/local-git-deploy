@@ -8,6 +8,8 @@ program
     .version(pkg.version)
     .description(pkg.description)
     .option('-c, --config <path>', 'Path to configuration file', 'local-git-deploy.yml')
+    .option('-b, --branch <name>', 'Override branch detection (for CI/CD)')
+    .option('-f, --force', 'Deploy even if branch is not mapped in config')
     .action(async (options) => {
         try {
             await main(options);

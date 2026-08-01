@@ -73,9 +73,15 @@ async function getModifiedFiles(git, remoteHash, localHash, excludePatterns = []
     return { upload, remove };
 }
 
+async function getCurrentBranch(git) {
+    const branch = await git.revparse(['--abbrev-ref', 'HEAD']);
+    return branch.trim();
+}
+
 module.exports = {
     initGit,
     getLocalHeadHash,
     getTrackedFiles,
-    getModifiedFiles
+    getModifiedFiles,
+    getCurrentBranch
 };

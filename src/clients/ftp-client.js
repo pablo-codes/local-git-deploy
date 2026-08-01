@@ -8,6 +8,10 @@ class FTPClient {
         this.config = config;
         this.client = new ftp.Client();
         this.client.ftp.socketTimeout = 30000;
+        // Per-branch state file naming: feature/login → .deploy-sync-state-feature-login
+        this.stateFileName = config._branch
+            ? `.deploy-sync-state-${config._branch.replace(/\//g, '-')}`
+            : '.deploy-sync-state';
     }
 
     async connect() {
@@ -58,7 +62,7 @@ class FTPClient {
     }
 
     async readStateFile() {
-        const remotePath = path.posix.join(this.config.remote_dir, '.deploy-sync-state').replace(/\\/g, '/');
+        const remotePath = path.posix.join(this.config.remote_dir, this.stateFileName).replace(/\\/g, '/');
         // Use os.tmpdir() + PID to avoid race conditions on parallel CI runs
         const localTempPath = path.join(os.tmpdir(), `.deploy-sync-state-${process.pid}.tmp`);
         try {
@@ -76,7 +80,7 @@ class FTPClient {
         const localTempPath = path.join(os.tmpdir(), `.deploy-sync-state-${process.pid}.tmp`);
         fs.writeFileSync(localTempPath, hash);
         try {
-            await this.uploadFile(localTempPath, '.deploy-sync-state');
+            await this.uploadFile(localTempPath, this.stateFileName);
         } finally {
             if (fs.existsSync(localTempPath)) fs.unlinkSync(localTempPath);
         }
