@@ -40,7 +40,23 @@ class SFTPClient {
             connectOptions.password = this.config.password;
         }
 
-        await this.client.connect(connectOptions);
+        // SSH Agent auth — keys managed by ssh-agent / OpenSSH agent
+        if (this.config._agent) {
+            connectOptions.agent = this.config._agent;
+        }
+
+        try {
+            await this.client.connect(connectOptions);
+        } catch (err) {
+            if (err.message && err.message.toLowerCase().includes('passphrase')) {
+                throw new Error(
+                    `SSH key is encrypted but no passphrase was provided. ` +
+                    `Either set DEPLOY_PASSWORD as the passphrase in your .env, ` +
+                    `or load the key into ssh-agent (ssh-add).`
+                );
+            }
+            throw err;
+        }
     }
 
     async disconnect() {

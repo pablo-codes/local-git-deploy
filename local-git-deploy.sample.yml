@@ -18,6 +18,14 @@ exclude:
   - "node_modules/**"
   - ".git/**"
 
+# ---------- Zero-config SFTP ----------
+# If you have SSH key auth set up (via ~/.ssh/config, ssh-agent, or default keys),
+# you can skip user, port, and credentials entirely:
+#
+# server: myserver          # can be a Host alias from ~/.ssh/config
+# protocol: sftp
+# remote_dir: /var/www/app
+
 # ---------- Deploy hooks (SFTP only) ----------
 # Run commands or scripts on the server before/after file sync.
 # Requires protocol: sftp

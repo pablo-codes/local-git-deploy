@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const yaml = require('yaml');
 const dotenv = require('dotenv');
 const chalk = require('chalk');
@@ -61,11 +62,96 @@ function resolveBranchConfig(rawConfig, branch, force) {
 }
 
 /**
+ * For SFTP connections without explicit credentials, attempt to resolve
+ * auth from the system's native SSH setup.
+ *
+ * Priority: ~/.ssh/config → SSH Agent → default key files
+ */
+function resolveSSHDefaults(config) {
+    if (config.protocol !== 'sftp') return;
+
+    const sshDir = path.join(os.homedir(), '.ssh');
+
+    const sshConfigPath = path.join(sshDir, 'config');
+    if (fs.existsSync(sshConfigPath)) {
+        try {
+            const SSHConfig = require('ssh-config');
+            const parsed = SSHConfig.parse(fs.readFileSync(sshConfigPath, 'utf8'));
+            const hostEntry = parsed.compute(config.server);
+
+            if (hostEntry) {
+                if (hostEntry.HostName) {
+                    config._originalHost = config.server;
+                    config.server = hostEntry.HostName;
+                }
+
+                if (hostEntry.User && !config.user) {
+                    config.user = hostEntry.User;
+                }
+                if (hostEntry.Port && !config.port) {
+                    config.port = parseInt(hostEntry.Port, 10);
+                }
+
+                // IdentityFile — compute() returns string[] when multiple match
+                if (hostEntry.IdentityFile && !config.privateKeyPath) {
+                    const identityFiles = Array.isArray(hostEntry.IdentityFile)
+                        ? hostEntry.IdentityFile
+                        : [hostEntry.IdentityFile];
+
+                    for (let keyPath of identityFiles) {
+                        keyPath = keyPath.replace(/\.pub$/, '');
+                        keyPath = keyPath.replace(/^~|%d/g, os.homedir());
+                        keyPath = keyPath.replace(/%h/g, config.server);
+
+                        if (fs.existsSync(keyPath)) {
+                            config.privateKeyPath = keyPath;
+                            console.log(chalk.dim(
+                                `  Using SSH key from ~/.ssh/config: ${identityFiles[0]}`
+                            ));
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.warn(chalk.yellow(
+                `  ⚠ Could not parse ~/.ssh/config: ${err.message}`
+            ));
+        }
+    }
+
+    if (!config.privateKeyPath && !config.password) {
+        const agentSocket = process.env.SSH_AUTH_SOCK
+            || (process.platform === 'win32'
+                ? '\\\\.\\pipe\\openssh-ssh-agent'
+                : null);
+
+        if (agentSocket) {
+            config._agent = agentSocket;
+            console.log(chalk.dim('  Using SSH agent for authentication.'));
+            return; // agent handles auth — no key file needed
+        }
+    }
+
+    if (!config.privateKeyPath && !config.password && !config._agent) {
+        const defaultKeys = ['id_ed25519', 'id_rsa', 'id_ecdsa'];
+        for (const keyName of defaultKeys) {
+            const keyPath = path.join(sshDir, keyName);
+            if (fs.existsSync(keyPath)) {
+                config.privateKeyPath = keyPath;
+                console.log(chalk.dim(`  Using default SSH key: ~/.ssh/${keyName}`));
+                break;
+            }
+        }
+    }
+}
+
+/**
  * Validate and normalize a resolved config object.
  * Handles credential loading, defaults, and hook validation.
  */
 function validateAndNormalize(config) {
-    const requiredFields = ['server', 'user', 'protocol', 'remote_dir'];
+    const requiredFields = ['server', 'protocol', 'remote_dir'];
     for (const field of requiredFields) {
         if (!config[field]) {
             throw new Error(`Missing required configuration field: '${field}'`);
@@ -97,7 +183,18 @@ function validateAndNormalize(config) {
         config.privateKeyPath = envPrivateKey;
     }
 
-    if (!config.password && !config.privateKeyPath) {
+    // For SFTP: try native SSH auth before erroring on missing credentials
+    resolveSSHDefaults(config);
+
+    if (!config.user && config.protocol === 'sftp') {
+        config.user = os.userInfo().username;
+        console.log(chalk.dim(`  Using system username: ${config.user}`));
+    }
+    if (!config.user) {
+        throw new Error("Missing required configuration field: 'user'");
+    }
+
+    if (!config.password && !config.privateKeyPath && !config._agent) {
         throw new Error('No credentials provided. Set DEPLOY_PASSWORD or DEPLOY_PRIVATE_KEY_PATH in a .env file.');
     }
 

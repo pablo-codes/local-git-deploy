@@ -64,6 +64,39 @@ _Tip: If your SFTP server requires both a private key and a passphrase, provide 
 
 ---
 
+## Zero-Config SFTP
+
+If you already have SSH key auth set up with your server, you may not need any credentials in your config at all. The tool automatically checks:
+
+1. **`~/.ssh/config`** — resolves host aliases, user, port, and identity files
+2. **SSH Agent** — uses keys loaded via `ssh-add` (works on Linux, macOS, and Windows OpenSSH)
+3. **Default key paths** — probes `~/.ssh/id_ed25519`, `~/.ssh/id_rsa`, `~/.ssh/id_ecdsa`
+
+**Minimal config — no `.env` needed:**
+
+```yaml
+server: myserver        # can be an alias from ~/.ssh/config
+protocol: sftp
+remote_dir: /var/www/app
+```
+
+If your `~/.ssh/config` has this entry:
+
+```
+Host myserver
+    HostName actual-server.com
+    User deploy
+    IdentityFile ~/.ssh/my_deploy_key
+```
+
+Then `local-git-deploy` will automatically resolve the hostname, user, and key — just like `ssh myserver` or VS Code Remote SSH.
+
+> **Priority:** Explicit credentials (`.env` or YAML) always override auto-detected ones. Zero-config only activates as a fallback.
+
+> **Encrypted keys:** If your auto-detected key is passphrase-protected, set `DEPLOY_PASSWORD` in your `.env` as the passphrase, or load the key into your SSH agent with `ssh-add`.
+
+---
+
 ## Usage
 
 Commit your changes locally, then run:

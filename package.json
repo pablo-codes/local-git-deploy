@@ -1,6 +1,6 @@
 {
   "name": "local-git-deploy",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Deploy only changed git files to FTP, FTPS, or SFTP servers. Fast, incremental, no CI/CD pipeline required.",
   "main": "src/index.js",
   "bin": {
@@ -60,6 +60,7 @@
     "micromatch": "^4.0.8",
     "ora": "^5.4.1",
     "simple-git": "^3.32.3",
+    "ssh-config": "^5.2.1",
     "ssh2-sftp-client": "^12.1.0",
     "yaml": "^2.8.2"
   }
